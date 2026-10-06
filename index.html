@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Leave calendar</title>
+<link rel="stylesheet" href="code-with-nazia.css">
+</head>
+<body>
+<div class="wrap">
+  <section class="cal" aria-label="Calendar">
+    <div class="head">
+      <h1 id="title"></h1>
+      <button class="pill" id="today">Today</button>
+      <button class="nav" id="prev" aria-label="Previous month">&#8249;</button>
+      <button class="nav" id="next" aria-label="Next month">&#8250;</button>
+      <button class="add" id="add" aria-label="New leave request">+</button>
+    </div>
+    <div class="evpanel" id="evpanel" role="dialog" aria-label="Upcoming events"><ul id="evlist"></ul></div>
+    <div class="grid-wrap"><div class="grid" id="grid"></div></div>
+    <div class="foot">
+      <div><span><i style="background:var(--yellow)"></i>Monthly</span><span><i style="background:var(--violet)"></i>Yearly</span></div>
+      <button class="evbtn" id="evbtn" aria-expanded="false" aria-controls="evpanel"><b id="count">3</b> Upcoming Events</button>
+    </div>
+  </section>
+
+  <div class="slot" id="slot"><section class="form" aria-label="Leave request">
+    <label for="sd">Start date</label>
+    <div class="row"><input class="field" id="sd" type="date"><input class="field" id="st" type="time" value="09:00"></div>
+    <label for="ed">End date</label>
+    <div class="row"><input class="field" id="ed" type="date"><input class="field" id="et" type="time" value="09:00"></div>
+    <label for="lt">Leave type</label>
+    <div class="row"><select id="lt"><option>Casual leave</option><option>Sick leave</option><option>Annual leave</option><option>Unpaid leave</option></select></div>
+    <label for="rs">Reason</label>
+    <input class="field reason" id="rs" placeholder="Type here">
+    <div class="actions"><button class="pill" id="cancel">Cancel</button><button class="apply" id="apply">Apply</button></div>
+    <div class="msg" id="msg" role="status"></div>
+  </section></div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const eventList = [
+  {date:"2026-09-10",type:"y",title:"Yearly review"},
+  {date:"2026-09-25",type:"m",title:"Monthly report"},
+  {date:"2026-10-09",type:"m",title:"Monthly planning"}
+];
+const events = Object.fromEntries(eventList.map(e=>[e.date,e.type]));
+const state = {year:2026, month:8, start:null, end:null};
+const $ = id => document.getElementById(id);
+const openForm=()=>$('slot').classList.add('open'), closeForm=()=>$('slot').classList.remove('open');
+const iso = d => d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+let leaves = [];
+try{leaves = JSON.parse(localStorage.getItem("leaves")||"[]")}catch(e){}
+const save = () => {try{localStorage.setItem("leaves",JSON.stringify(leaves))}catch(e){}};
+let picking = false; // true after first click, waiting for end date
+
+function render(){
+  const {year,month,start,end} = state;
+  $("title").textContent = new Date(year,month,1).toLocaleDateString("en-US",{month:"long",year:"numeric"}).replace(" ",", ");
+  const grid = $("grid"); grid.innerHTML = "";
+  ["MON","TUE","WED","THU","FRI","SAT","SUN"].forEach(d=>{const e=document.createElement("div");e.className="dow";e.textContent=d;grid.appendChild(e)});
+  const first = new Date(year,month,1);
+  const offset = (first.getDay()+6)%7;
+  const cursor = new Date(year,month,1-offset);
+  for(let i=0;i<42;i++){
+    const key = iso(cursor), out = cursor.getMonth()!==month;
+    if(i>=35 && out && cursor.getDate()<8 && i%7===0) break;
+    const b = document.createElement("button");
+    b.className = "day"+(out?" out":"");
+    b.textContent = cursor.getDate();
+    const lv = leaves.find(l=>key>=l.start && key<=l.end);
+    if(lv){b.classList.add("sv");b.title=lv.type+(lv.reason?": "+lv.reason:"");if(key===lv.start)b.classList.add("sv-s");if(key===lv.end)b.classList.add("sv-e")}
+    if(start && key===start) b.classList.add("start");
+    if(end && key===end) b.classList.add("end");
+    if(start && end && key>start && key<end) b.classList.add("range");
+    if(events[key] && !out){const d=document.createElement("span");d.className="dot "+events[key];b.appendChild(d)}
+    b.dataset.key = key;
+    b.onclick = () => pick(key);
+    grid.appendChild(b);
+    cursor.setDate(cursor.getDate()+1);
+  }
+  $("sd").value = start||""; $("ed").value = end||"";
+  renderEvents();
+}
+function pick(key){
+  if(!picking){state.start=key;state.end=key;picking=true}
+  else{
+    if(key<state.start){state.end=state.start;state.start=key}else state.end=key;
+    picking=false;
+  }
+  openForm();
+  render();
+}
+function renderEvents(){
+  const items = eventList.map(e=>({start:e.date,end:e.date,title:e.title,color:e.type==="m"?"var(--yellow)":"var(--violet)"}))
+    .concat(leaves.map(l=>({start:l.start,end:l.end,title:l.type+(l.reason?" - "+l.reason:""),color:"var(--red)"})))
+    .sort((a,b)=>a.start<b.start?-1:1);
+  $("count").textContent = items.length;
+  const ul=$("evlist"); ul.innerHTML="";
+  const fmt=k=>new Date(k+"T00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"});
+  items.forEach(it=>{
+    const li=document.createElement("li"),b=document.createElement("button"),d=document.createElement("i"),w=document.createElement("div"),t=document.createElement("b"),sm=document.createElement("small");
+    d.style.background=it.color;t.textContent=it.title;sm.textContent=it.start===it.end?fmt(it.start):fmt(it.start)+" - "+fmt(it.end);
+    w.append(t,sm);b.append(d,w);li.appendChild(b);ul.appendChild(li);
+    b.onclick=()=>{const x=new Date(it.start+"T00:00");state.year=x.getFullYear();state.month=x.getMonth();setPanel(false);render()};
+  });
+}
+function setPanel(open){$("evpanel").classList.toggle("show",open);$("evbtn").setAttribute("aria-expanded",open)}
+$("evbtn").onclick=e=>{e.stopPropagation();setPanel(!$("evpanel").classList.contains("show"))};
+document.addEventListener("click",e=>{if(!$("evpanel").contains(e.target))setPanel(false)});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")setPanel(false)});
+$("prev").onclick = () => {state.month--; if(state.month<0){state.month=11;state.year--} render()};
+$("next").onclick = () => {state.month++; if(state.month>11){state.month=0;state.year++} render()};
+$("today").onclick = () => {const t=new Date();state.year=t.getFullYear();state.month=t.getMonth();render()};
+$("add").onclick = () => {state.start=state.end=null;picking=false;$("rs").value="";$("msg").textContent="";openForm();render()};
+$("sd").onchange = e => {state.start=e.target.value; if(state.end<state.start) state.end=state.start; syncMonth(state.start)};
+$("ed").onchange = e => {state.end=e.target.value; if(state.end<state.start) state.start=state.end; render()};
+function syncMonth(k){if(!k)return render();const d=new Date(k+"T00:00");state.year=d.getFullYear();state.month=d.getMonth();render()}
+$("cancel").onclick = () => {state.start=state.end=null;picking=false;$("msg").textContent="";closeForm();render()};
+$("apply").onclick = () => {
+  if(!state.start||!state.end){$("msg").textContent="Pick a start and end date.";return}
+  if(leaves.some(l=>state.start<=l.end && state.end>=l.start)){$("msg").textContent="These dates already have a leave.";return}
+  leaves.push({start:state.start,end:state.end,type:$("lt").value,reason:$("rs").value.trim()});
+  save();
+  const t=$("toast");t.textContent=$("lt").value+" saved: "+state.start+" to "+state.end;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2600);
+  state.start=state.end=null;picking=false;$("rs").value="";$("msg").textContent="";
+  closeForm();render();
+};
+render();
+</script>
+</body>
+</html>
